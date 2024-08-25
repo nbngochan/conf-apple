@@ -22,17 +22,17 @@ parser.add_argument('--dataset', type=str, help='Dataset version name')
 parser.add_argument('--checkpoint', type=str, help='Tranined checkpoint')
 parser.add_argument('--experiment', default=1, type=int, help='number of experiment')
 parser.add_argument('--input_size', default=512, type=int, help='input size')
-parser.add_argument('--c_thresh', default=0.1, type=float, help='threshold for center point')
+parser.add_argument('--c_thresh', default=0.4, type=float, help='threshold for center point')
 parser.add_argument('--backbone', type=str, default='gaussnet_cascade', 
                         help='[gaussnet_cascade, gaussnet]')
 parser.add_argument('--kernel', default=3, type=int, help='kernel of max-pooling for center point')
-parser.add_argument('--scale', default=1, type=float, help='scale factor')
+parser.add_argument('--scale', default=1.3, type=float, help='scale factor')
 
 arg = parser.parse_args()
 print(arg)
 
 
-result_img_path = 'img-out-240122/'
+result_img_path = 'img-out-240814/'
 if not os.path.exists(result_img_path):
     os.makedirs(result_img_path)
     
@@ -51,6 +51,7 @@ device = 'cuda' if torch.cuda.is_available() else 'cpu'
 model.cuda()
 
 checkpoint = torch.load(arg.checkpoint)
+
 model.load_state_dict(checkpoint['model'])
 checkpoint = None
 
@@ -79,7 +80,10 @@ all_targets = []
 
 for idx in range(len(test_dataset)):
 # for idx in range(50):
+# id = 270
+# for idx in [id]:
     image, image_path, ground_truth = test_dataset.__getitem__(idx)
+    # import pdb; pdb.set_trace()
     image_name = os.path.basename(image_path).split('.')[0]
     print(image_name)    
     org_h, org_w, _ = image.shape
@@ -111,7 +115,6 @@ for idx in range(len(test_dataset)):
         peak = nms(out, arg.kernel)
         c_ys, c_xs = topk(peak, k=2000)
     
-        
     x = x[0].cpu().detach().numpy()
     out = out[0].cpu().detach().numpy()
     c_xs = c_xs[0].int().cpu().detach().numpy()
@@ -126,11 +129,12 @@ for idx in range(len(test_dataset)):
     t2 = time.time()
     
     results = get_center_point_contour(out, arg.c_thresh, arg.scale, (org_w, org_h))
-    
+
     t3 = time.time()
     
     _img = image.copy()
     _img_gt = image.copy()
+    overlay = image.copy()
     
     # Predicted value
     pred_boxes = []
@@ -169,6 +173,7 @@ for idx in range(len(test_dataset)):
     true_labels = []
     
     for box in ground_truth:
+        # import pdb; pdb.set_trace()
         label = int(box[8])
         color = COLORS[label]
         
@@ -197,23 +202,119 @@ for idx in range(len(test_dataset)):
     # Plotting visualization after prediction
     merge_out = np.max(out, axis=-1)
     merge_out = np.clip(merge_out * 255, 0, 255)
-
+    
     binary = (merge_out > 0.3*255) * 255
     
     merge_out = cv2.applyColorMap(merge_out.astype(np.uint8), cv2.COLORMAP_JET)
     binary = cv2.applyColorMap(binary.astype(np.uint8), cv2.COLORMAP_JET)
-    
+    # import pdb; pdb.set_trace()
     merge_out = cv2.resize(merge_out, (w, h))  # image with bounding box prediction
     binary = cv2.resize(binary, (w, h))  # binary image with thresholding
     
     result_img = cv2.hconcat([_img_gt[:, :, ::-1], _img[:, :, ::-1], merge_out, binary])
 
-    cv2.imwrite("%s/%s.jpg" % (result_img_path, image_name), result_img)
+    overlay_img = cv2.addWeighted(overlay[:, :, ::-1], 1, merge_out, 0.5, 0)
+    
+    combine_img = cv2.hconcat([_img_gt[:, :, ::-1], overlay_img, _img[:, :, ::-1]])
+    
+    cv2.imwrite("%s/%s.jpg" % (result_img_path, image_name), combine_img)
 
 
 # Calculate mAP
 metric = MeanAveragePrecision(class_metrics=True)
 metric.update(all_preds, all_targets)
 mAP = metric.compute()
-print("Mean Average Precision (mAP):", mAP)
 
+from sklearn.metrics import precision_recall_fscore_support
+
+def calculate_iou(box1, box2):
+    x1, y1 = torch.max(box1[:2], box2[:2])
+    x2, y2 = torch.min(box1[2:], box2[2:])
+    intersection = (x2 - x1).clamp(0) * (y2 - y1).clamp(0)
+    area1 = (box1[2] - box1[0]) * (box1[3] - box1[1])
+    area2 = (box2[2] - box2[0]) * (box2[3] - box2[1])
+    union = area1 + area2 - intersection
+    iou = intersection / union
+    return iou
+
+iou_threshold = 0.5
+y_true = []
+y_pred = []
+
+for pred, gt in zip(all_preds, all_targets):
+    gt_boxes = gt['boxes']
+    gt_labels = gt['labels']
+    pred_boxes = pred['boxes']
+    pred_labels = pred['labels']
+    matched_gt = set()
+    
+    for p_box, p_label in zip(pred_boxes, pred_labels):
+        found_match = False
+        for i, (g_box, g_label) in enumerate(zip(gt_boxes, gt_labels)):
+            if i in matched_gt:
+                continue
+            if p_label == g_label:  # Check if labels match
+                iou = calculate_iou(p_box, g_box)
+                if iou >= iou_threshold:
+                    y_true.append(1)  # True Positive
+                    y_pred.append(1)
+                    matched_gt.add(i)
+                    found_match = True
+                    break
+        if not found_match:
+            y_true.append(0)  # False Positive
+            y_pred.append(1)
+    
+    for i, (g_box, g_label) in enumerate(zip(gt_boxes, gt_labels)):
+        if i not in matched_gt:
+            y_true.append(1)  # False Negative
+            y_pred.append(0)
+
+# Calculate precision, recall, fscore
+precision, recall, f1, _ = precision_recall_fscore_support(y_true, y_pred, average='binary')
+classification_report = {
+    'precision': precision,
+    'recall': recall,
+    'f1-score': f1,
+}
+
+classification_report
+
+from metric_module import ObjectDetectionMetric
+
+metric = ObjectDetectionMetric([0, 1])
+
+# Iterate through each prediction and ground truth pair and update the metric
+for pred, gt in zip(all_preds, all_targets):
+    bboxes_prediction = pred['boxes'].numpy()
+    labels_prediction = pred['labels'].numpy()
+    scores_prediction = pred['scores'].numpy()
+
+    bboxes_groundtruth = gt['boxes'].numpy()
+    labels_groundtruth = gt['labels'].numpy()
+
+    # Update metric with current predictions and ground truths
+    metric.update(
+        bboxes_groundtruth=bboxes_groundtruth,
+        labels_groundtruth=labels_groundtruth,
+        bboxes_prediction=bboxes_prediction,
+        labels_prediction=labels_prediction,
+        scores_prediction=scores_prediction
+    )
+
+# Calculate mAP (mean Average Precision)
+mAP = metric.get_mAP(type_mAP="VOC12", conclude=True)
+print("mAP:", mAP)
+
+# Get precision-recall curve for a specific class (e.g., class 0)
+precisions, recalls = metric.get_precision_recall_curve(no_class=0, thresh_IOU=0.5)
+print("Precision:", precisions)
+print("Recall:", recalls)
+
+# Get confusion matrix
+confusion_matrix = metric.get_confusion(thresh_confidence=0.5, thresh_IOU=0.5, conclude=True)
+print("Confusion Matrix:")
+print(confusion_matrix)
+
+import pdb; pdb.set_trace()
+print("Mean Average Precision (mAP):", mAP)

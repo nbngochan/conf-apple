@@ -1,0 +1,2 @@
+python train.py --root /mnt/data/dataset/apple-defects/org-patch/ --mode_train train --mode_valid val --dataset split --backbone gaussnet_cascade --epochs 100 --alpha 0.95 --batch_size 8
+python test.py --root /mnt/data/dataset/apple-defects/train-test-split --dataset split --backbone hourglass52_cascade --checkpoint /mnt/data/store/logs/20240205-133452/best_dist_epoch98_0.0084.pt --c_thresh 0.3 --scale 1.2
