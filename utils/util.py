@@ -8,12 +8,16 @@ from sklearn.metrics import auc
 import math
 
 APPLE_CLASSES = ['blight', 'scratch', 'normal']
-COLORS = [(0, 128, 0),  # Green
-            (255, 0, 0),  # Red
+# COLORS = [(0, 128, 0),  # Green
+#             (255, 0, 0),  # Red
+#             (0, 0, 255),  # Blue
+#             (255, 255, 0),  # Yellow
+#             (128, 0, 128)]  # Purple
+COLORS = [(255, 129, 0),  # Red
+            (0, 128, 0),  # Green
             (0, 0, 255),  # Blue
             (255, 255, 0),  # Yellow
             (128, 0, 128)]  # Purple
-
 
 def is_nan(value):
     return math.isnan(float(value))

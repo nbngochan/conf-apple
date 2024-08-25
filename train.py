@@ -6,7 +6,7 @@ import yaml
 import torch
 import datetime
 import torch.optim as optim
-
+import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from lightning_fabric.utilities.seed import seed_everything
 
@@ -180,6 +180,8 @@ def train(train_loader, model, criterion, optimizer, scheduler, summary_writer, 
         w = w.to(device, non_blocking=True)
         s = s.to(device, non_blocking=True)
 
+        x = F.interpolate(x, size=[y.shape[1]*2, y.shape[2]*2], mode='bilinear', align_corners=False)
+        
         outs = model(x)
         with torch.cuda.amp.autocast(enabled=args.amp):
             if type(outs) == list:
@@ -232,6 +234,8 @@ def validate(valid_loader, model, criterion, device, epoch, summary_writer, log_
         w = w.to(device, non_blocking=True)
         s = s.to(device, non_blocking=True)
 
+        x = F.interpolate(x, size=[y.shape[1]*2, y.shape[2]*2], mode='bilinear', align_corners=False)
+        
         # compute output
         with torch.no_grad():
             outs = model(x)

@@ -75,6 +75,7 @@ class ListAppleDataset(Dataset):
         elif self.dataset in ['version-2', 'version-3', 'split']:
             annotation, image_path, image = self.get_target(self.data[idx])
         
+        # import pdb; pdb.set_trace()
         sum_size = 1
         height, width, _ = image.shape
         
@@ -88,6 +89,7 @@ class ListAppleDataset(Dataset):
         boxes = target[:, :8] if target.shape[0]!=0 else None
         labels = target[:, 8] if target.shape[0]!=0 else None
         
+        img = image.copy()
         # apply transform on `image`, `boxes`, `labels`
         image, boxes, labels = self.transform(image, boxes, labels)
         
@@ -96,7 +98,7 @@ class ListAppleDataset(Dataset):
         
         for box, label in zip(boxes, labels):
             mask, area = smoothing_mask(mask, area, box, sum_size/num_obj, label)
-        
+        # import pdb; pdb.set_trace()
         image, mask, area = self.annotation_transform(np.array(image), mask, area, self.img_size[1], self.img_size[1])
         
         image = torch.from_numpy(np.array(image)).permute(2, 0, 1).float()
@@ -151,7 +153,7 @@ class ListAppleDataset(Dataset):
         for item in annot_list:
             try:
                 open_annot = open(os.path.join(annot_path, item), "r")
-                label = open_annot.read().split()[-2]
+                label = open_annot.read().split()[8]
                 num_classes.add(label)
             except:
                 missing_list.append(item.split('.')[0])  # remove sample without annotation
@@ -161,9 +163,7 @@ class ListAppleDataset(Dataset):
             ids.append(line)
 
         self.data = [item for item in ids if item not in missing_list]
-
         self.num_classes = len(num_classes)
-
         self.data = sorted(self.data)
         
     
@@ -203,14 +203,13 @@ class ListAppleDataset(Dataset):
                 annotation.append([x1, y1, x2, y2, x3, y3, x4, y4, APPLE_CLASSES.index(class_name)])
             
         if self.dataset in ['version-2', 'version-3', 'split']:
-            
             image_path = self._coco_imgpath % (idx)
             
             image = cv2.imread(image_path)[:,:,::-1]
             size = image.shape[0]
             
-            if 'test' in self.mode:
-                return [], image_path, image
+            # if 'test' in self.mode:
+            #     return [], image_path, image
             
             anno = open(self._anno_path % idx, "r")
             anno = anno.read().splitlines()
@@ -221,12 +220,11 @@ class ListAppleDataset(Dataset):
                 _anno_temp = _anno.split(' ')
                 # _anno = [float(float(x)/size) for x in _anno_temp[:8]]
                 _anno = [x for x in _anno_temp[:8]]
-                _anno.append(APPLE_CLASSES.index(_anno_temp[-2]))
+                _anno.append(APPLE_CLASSES.index(_anno_temp[8]))
                 annotation.append(_anno)
 
         # else:
         #     raise ValueError(f'Dataset {self.dataset} not found.')
-        
         return annotation, image_path, image
     
 
@@ -239,7 +237,13 @@ if __name__ == '__main__':
                                  root='/mnt/data/dataset/apple-defects/train-test-split/',
                                  img_size=(512, 512),
                                  transform=transform_train)
-
+    # debug for index of 270 from appledata
+    idx = [270]
+    for id in idx:
+        appledata.get_target(appledata[id])
+    import pdb; pdb.set_trace()
+    annotation, image_path, image = appledata.data[idx]
+    
     apple_loader = DataLoader(appledata, batch_size=4, shuffle=True)
     
     for batch in apple_loader:

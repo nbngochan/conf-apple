@@ -68,6 +68,35 @@ class conv3x3_bn_relu(nn.Module):
         
         return x
 
+class conv5x5_bn_relu(nn.Module):
+    def __init__(self, in_planes, inter_planes, dilation=1):
+        super(conv5x5_bn_relu, self).__init__()
+
+        self.conv = nn.Conv2d(in_planes, inter_planes, kernel_size=5, stride=1, padding=2)
+        self.bn   = nn.BatchNorm2d(inter_planes)
+        self.relu = nn.ReLU(inplace=True)
+
+    def forward(self, x):
+        x = self.conv(x)
+        x = self.bn(x)
+        x = self.relu(x)
+
+        return x
+
+class conv7x7_bn_relu(nn.Module):
+    def __init__(self, in_planes, inter_planes, dilation=1):
+        super(conv7x7_bn_relu, self).__init__()
+
+        self.conv = nn.Conv2d(in_planes, inter_planes, kernel_size=7, stride=1, padding=3)
+        self.bn   = nn.BatchNorm2d(inter_planes)
+        self.relu = nn.ReLU(inplace=True)
+
+    def forward(self, x):
+        x = self.conv(x)
+        x = self.bn(x)
+        x = self.relu(x)
+
+        return x
 
 class Multi_Rotation_Convolution_Block(nn.Module):
     def __init__(self, inplanes):
@@ -175,37 +204,38 @@ class Multi_Rotation_Convolution_Block_light(nn.Module):
 class Modified_Multi_Rotation_Convolution_Block(nn.Module):
     def __init__(self, in_planes):
         super(Modified_Multi_Rotation_Convolution_Block, self).__init__()
-        
-        inter_planes = in_planes // 4
-        
-        self.split_1 = conv1x1_bn_relu(in_planes, inter_planes)
-        self.split_2 = conv1x1_bn_relu(in_planes, inter_planes)
-        self.split_3 = conv1x1_bn_relu(in_planes, inter_planes)
-        self.split_4 = conv1x1_bn_relu(in_planes, inter_planes)
 
-        self.conv_1 = conv3x3_bn_relu(inter_planes, inter_planes)
-        self.conv_2 = conv3x3_bn_relu(inter_planes, inter_planes)
-        self.conv_3 = conv3x3_bn_relu(inter_planes, inter_planes)
-        self.conv_4 = conv3x3_bn_relu(inter_planes, inter_planes)
+        inter_planes = in_planes // 4
+
+        self.conv_1 = conv1x1_bn_relu(in_planes, inter_planes)
+        self.conv_2 = conv1x1_bn_relu(in_planes, inter_planes)
+        self.conv_3 = conv1x1_bn_relu(in_planes, inter_planes)
+        self.max_pool = nn.Sequential(
+            nn.MaxPool2d(kernel_size=3, padding=1, stride=1),
+            conv1x1_bn_relu(in_planes, inter_planes),
+        )
+
+        self.branch_1 = conv3x3_bn_relu(inter_planes, inter_planes)
+        self.branch_2 = conv5x5_bn_relu(inter_planes, inter_planes)
+        self.branch_3 = conv7x7_bn_relu(inter_planes, inter_planes)
+        self.branch_4 = conv1x1_bn_relu(inter_planes, inter_planes)
 
         self.conv_final = conv3x3_bn_relu(in_planes, in_planes)
 
     def forward(self, x):
-        
-        is_amp = (x.dtype == torch.half)
-        
         """ smoothing """
         x = torch.nn.functional.avg_pool2d(x, (3, 3), stride=1, padding=1)
 
-        outs = [self.split_1(x), self.split_2(x), self.split_3(x), self.split_4(x)]
+        outs = [self.conv_1(x), self.conv_2(x), self.conv_3(x), self.max_pool(x)]
 
-        outs = [self.conv_1(outs[0]), self.conv_2(outs[1]), self.conv_3(outs[2]), self.conv_4(outs[3])]
+        outs = [self.branch_1(outs[0]), self.branch_2(outs[1]), self.branch_3(outs[2]), self.branch_4(outs[3])]
 
         outs = torch.cat(outs, 1)
         outs = outs + x
         outs = self.conv_final(outs)
 
         return outs
+
 
 if __name__ == '__main__':
     device = 'cpu'

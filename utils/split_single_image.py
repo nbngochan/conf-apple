@@ -64,8 +64,8 @@ class splitbase():
         for name in imagenames:
             self.SplitSingle(name, rate, self.ext)
 if __name__ == '__main__':
-    split = splitbase('/mnt/data/dataset/apple-defects/demo/original/',
-                      '/mnt/data/dataset/apple-defects/demo/split/',
+    split = splitbase('/mnt/data/dataset/apple-defects/test-patch/original/',
+                      '/mnt/data/dataset/apple-defects/test-patch/patch/',
                       gap=100,
                       subsize=512)
     split.splitdata(1)

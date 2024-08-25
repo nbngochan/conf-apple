@@ -269,6 +269,7 @@ class Transform():
                 ConvertFromInts(),
                 Resize(self.size),
                 PhotometricDistort(),
+                RandomMirror(),
                 Normalize(mean, var)
             ])
         else:
